@@ -1,13 +1,15 @@
 const os = require('os');
 const osu = require('os-utils');  // Adicione o módulo os-utils
+const macaddress = require('node-macaddress');
 
+// Retorna o IP da Máquina
 function getLocalIP() {
     const nets = os.networkInterfaces();
     let localIP = 'N/A';
 
     for (const name of Object.keys(nets)) {
         for (const net of nets[name]) {
-            // Skip over non-IPv4 and internal (i.e., 127.0.0.1) addresses
+            // Pula endereços que não são IPv4 e internos (ou seja, 127.0.0.1)
             if (net.family === 'IPv4' && !net.internal) {
                 localIP = net.address;
                 break;
@@ -18,60 +20,64 @@ function getLocalIP() {
     return localIP;
 }
 
-function getNetworkInterfaces() {
-    const nets = os.networkInterfaces();
-    const interfaces = {};
-  
-    for (const name of Object.keys(nets)) {
-      interfaces[name] = [];
-      for (const net of nets[name]) {
-        interfaces[name].push({
-          family: net.family,
-          address: net.address,
-          netmask: net.netmask,
-          mac: net.mac,
-        });
+// Retorna o MAC da Máquina
+function getMacAddress() {
+  return new Promise((resolve, reject) => {
+    macaddress.one((err, mac) => {
+      if (err) {
+        console.error('Error obtaining MAC address:', err);
+        reject(err); // Lida com o erro adequadamente (opcional)
+        return;
       }
-    }
-  
-    return interfaces;
-  }
 
-setInterval(() => {
+      resolve(mac);
+    });
+  });
+}
+
+setInterval(async () => {
     const { arch, platform, totalmem, freemem, cpus, hostname, type, release, uptime, userInfo } = os;
     const tRam = totalmem() / 1024 / 1024;
     const fRam = freemem() / 1024 / 1024;
     const usage = ((tRam - fRam) / tRam) * 100;
     const cpuCount = cpus().length;
     const userInfoObj = userInfo();
+    const uptimeSeconds = uptime();
+    const uptimeHours = (uptimeSeconds / 360000);
+    
+    try {
+        const macAddress = await getMacAddress();
+        
+        osu.cpuUsage(cpuPercentage => {
+            const stats = {
+                OS: platform(), // Plataforma do sistema operacional
+                Arch: arch(), // Arquitetura da CPU
+                OS_Type: type(), // Tipo do sistema operacional
+                OS_Release: release(), // Versão do sistema operacional
+                Uptime: `${uptimeHours.toFixed(2)} hours`, // Tempo aproximado de máquina ligada
 
-    osu.cpuUsage(cpuPercentage => {
-        const stats = {
+                Hostname: hostname(),
+                Username: userInfoObj.username,
+                Homedir: userInfoObj.homedir,
 
-            OS: platform(),
-            Arch: arch(),
-            OS_Type: type(),
-            OS_Release: release(),
-            Uptime: `${(uptime() / 3600).toFixed(2)} hours`,
+                CPU_Count: cpuCount, // Número de núcleos da CPU
+                CPU_Model: cpus()[0].model, // Modelo da CPU
+                CPU_Usage: `${(cpuPercentage * 100).toFixed(2)} %`, // Percentual de uso de CPU
 
-            Hostname: hostname(),
-            Username: userInfoObj.username,
-            Homedir: userInfoObj.homedir,
+                TotalRAM: `${parseInt(tRam)} MB`, // Total de RAM em MB
+                FreeRAM: `${parseInt(fRam)} MB`, // RAM livre em MB
+                RAM_Usage: `${usage.toFixed(2)} %`, // Percentual de uso de RAM
 
-            CPU_Count: cpuCount,
-            CPU_Model: cpus()[0].model,
-            TotalRAM: `${parseInt(tRam)} MB`,
-            FreeRAM: `${parseInt(fRam)} MB`,
-            RAM_Usage: `${usage.toFixed(2)} %`,
-            CPU_Usage: `${(cpuPercentage * 100).toFixed(2)} %`,
+                LocalIP: getLocalIP(),
+                MAC_Address: macAddress, // Endereço MAC da máquina
+            };
 
-            LocalIP: getLocalIP(),
-            interfaces: getNetworkInterfaces()
-        };
+            console.clear();
+            console.table(stats);
 
-        console.clear();
-        console.table(stats);
-
-        exports.stats = stats;
-    });
+            exports.stats = stats;
+        });
+    } catch (err) {
+        console.error('Error obtaining MAC address:', err);
+    }
 }, 1000);
